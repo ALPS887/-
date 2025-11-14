@@ -1,122 +1,148 @@
-import { useState, useRef, useEffect } from 'react'
-import './App.css'
+import { useState, useEffect } from 'react';
+import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { initializeFirebase, getFirebaseConfig, getFirebaseInstances } from './firebase';
+import FirebaseSetup from './components/FirebaseSetup';
+import ProfileSetup from './components/ProfileSetup';
+import GroupList from './components/GroupList';
+import Chat from './components/Chat';
+import './App.css';
 
 function App() {
-  const [messages, setMessages] = useState([
-    { id: 1, text: 'こんにちは！', sender: 'other', time: '10:30' },
-    { id: 2, text: 'やあ、元気？', sender: 'me', time: '10:31' },
-    { id: 3, text: '元気だよ！今日は天気がいいね', sender: 'other', time: '10:32' },
-    { id: 4, text: 'そうだね！散歩でも行こうかな', sender: 'me', time: '10:33' },
-  ])
-  const [inputText, setInputText] = useState('')
-  const messagesEndRef = useRef(null)
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+  const [screen, setScreen] = useState('welcome');
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [currentGroupId, setCurrentGroupId] = useState(null);
+  const [firebaseReady, setFirebaseReady] = useState(false);
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
-
-  const handleSend = (e) => {
-    e.preventDefault()
-    if (inputText.trim() === '') return
-
-    const now = new Date()
-    const time = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`
-
-    const newMessage = {
-      id: messages.length + 1,
-      text: inputText,
-      sender: 'me',
-      time: time,
+    // 保存されたFirebase設定をチェック
+    const savedConfig = getFirebaseConfig();
+    if (savedConfig) {
+      try {
+        initializeFirebase(savedConfig);
+        setFirebaseReady(true);
+        setScreen('loading');
+      } catch (error) {
+        console.error('Firebase初期化失敗:', error);
+        setScreen('firebaseSetup');
+      }
+    } else {
+      setScreen('welcome');
     }
+  }, []);
 
-    setMessages([...messages, newMessage])
-    setInputText('')
+  useEffect(() => {
+    if (!firebaseReady) return;
 
-    // 自動返信（デモ用）
-    setTimeout(() => {
-      const replyTime = `${now.getHours()}:${String(now.getMinutes() + 1).padStart(2, '0')}`
-      const replies = [
-        'いいね！',
-        'そうだね',
-        'わかった！',
-        'ありがとう',
-        '了解です',
-        'なるほど',
-      ]
-      const randomReply = replies[Math.floor(Math.random() * replies.length)]
+    const { auth } = getFirebaseInstances();
+    if (!auth) return;
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: prev.length + 1,
-          text: randomReply,
-          sender: 'other',
-          time: replyTime,
-        },
-      ])
-    }, 1000)
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        // プロフィールチェックは別のコンポーネントで行う
+        setScreen('checkProfile');
+      } else {
+        // 匿名認証
+        try {
+          await signInAnonymously(auth);
+        } catch (error) {
+          console.error('認証エラー:', error);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [firebaseReady]);
+
+  const handleFirebaseSetup = (config) => {
+    try {
+      initializeFirebase(config);
+      setFirebaseReady(true);
+      setScreen('loading');
+    } catch (error) {
+      alert('Firebase接続に失敗しました: ' + error.message);
+    }
+  };
+
+  const handleProfileComplete = (profileData) => {
+    setProfile(profileData);
+    setScreen('groupList');
+  };
+
+  const openChat = (groupId) => {
+    setCurrentGroupId(groupId);
+    setScreen('chat');
+  };
+
+  const backToGroupList = () => {
+    setCurrentGroupId(null);
+    setScreen('groupList');
+  };
+
+  if (screen === 'welcome') {
+    return (
+      <div className="lime-container">
+        <div className="lime-logo">LIME</div>
+        <div className="lime-subtitle">シンプルで楽しいチャットアプリ</div>
+        <div className="lime-card">
+          <h2 className="text-center mb-30">ようこそ！</h2>
+          <button className="lime-btn" onClick={() => setScreen('firebaseSetup')}>
+            はじめる
+          </button>
+        </div>
+      </div>
+    );
   }
 
-  return (
-    <div className="line-app">
-      {/* ヘッダー */}
-      <header className="line-header">
-        <div className="header-left">
-          <button className="back-button">←</button>
-        </div>
-        <div className="header-center">
-          <div className="chat-name">友達</div>
-        </div>
-        <div className="header-right">
-          <button className="menu-button">≡</button>
-        </div>
-      </header>
+  if (screen === 'firebaseSetup') {
+    return <FirebaseSetup onComplete={handleFirebaseSetup} />;
+  }
 
-      {/* メッセージエリア */}
-      <div className="messages-container">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`message-wrapper ${message.sender === 'me' ? 'message-me' : 'message-other'}`}
-          >
-            {message.sender === 'other' && (
-              <div className="avatar">
-                <div className="avatar-circle">👤</div>
-              </div>
-            )}
-            <div className="message-content">
-              <div className="message-bubble">
-                {message.text}
-              </div>
-              <div className="message-time">{message.time}</div>
-            </div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
+  if (screen === 'loading') {
+    return (
+      <div className="lime-container">
+        <div className="lime-logo">LIME</div>
+        <div className="lime-subtitle">読み込み中...</div>
       </div>
+    );
+  }
 
-      {/* 入力エリア */}
-      <form className="input-container" onSubmit={handleSend}>
-        <button type="button" className="add-button">+</button>
-        <input
-          type="text"
-          className="message-input"
-          placeholder="メッセージを入力"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-        />
-        <button type="submit" className="send-button">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M2 21L23 12L2 3V10L17 12L2 14V21Z" fill="currentColor"/>
-          </svg>
-        </button>
-      </form>
-    </div>
-  )
+  if (screen === 'checkProfile') {
+    return (
+      <ProfileSetup
+        user={user}
+        onComplete={handleProfileComplete}
+        onProfileExists={(existingProfile) => {
+          setProfile(existingProfile);
+          setScreen('groupList');
+        }}
+      />
+    );
+  }
+
+  if (screen === 'groupList') {
+    return (
+      <GroupList
+        user={user}
+        profile={profile}
+        onOpenChat={openChat}
+      />
+    );
+  }
+
+  if (screen === 'chat') {
+    return (
+      <Chat
+        user={user}
+        profile={profile}
+        groupId={currentGroupId}
+        onBack={backToGroupList}
+      />
+    );
+  }
+
+  return null;
 }
 
-export default App
+export default App;
