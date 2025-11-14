@@ -1,0 +1,8 @@
+# Node modules (only in subdirectories)
+/node_modules/
+/package-lock.json
+/package.json
+/src/
+
+# Keep line-chat-app directory
+!line-chat-app/
