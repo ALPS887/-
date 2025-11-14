@@ -4,5 +4,9 @@
 /package.json
 /src/
 
+# Archive files
+*.tar.gz
+*.zip
+
 # Keep line-chat-app directory
 !line-chat-app/
