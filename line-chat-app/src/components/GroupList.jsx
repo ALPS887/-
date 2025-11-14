@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, arrayUnion } from 'firebase/firestore';
 import { getFirebaseInstances } from '../firebase';
 
-function GroupList({ user, profile, onOpenChat }) {
+function GroupList({ user, profile, onOpenChat, onOpenTimeline, onOpenKeep, onOpenSettings }) {
   const [groups, setGroups] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -107,6 +107,17 @@ function GroupList({ user, profile, onOpenChat }) {
       <div className="lime-card" style={{ maxWidth: '800px' }}>
         <div className="group-list-header">
           <h2>{profile?.name}さん</h2>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button className="header-icon-btn" onClick={onOpenTimeline} title="タイムライン">
+              📰
+            </button>
+            <button className="header-icon-btn" onClick={onOpenKeep} title="Keep">
+              💾
+            </button>
+            <button className="header-icon-btn" onClick={onOpenSettings} title="設定">
+              ⚙️
+            </button>
+          </div>
         </div>
 
         <div className="button-grid">

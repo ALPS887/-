@@ -1,21 +1,39 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, createContext } from 'react';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { initializeFirebase, getFirebaseConfig, getFirebaseInstances } from './firebase';
 import FirebaseSetup from './components/FirebaseSetup';
 import ProfileSetup from './components/ProfileSetup';
 import GroupList from './components/GroupList';
 import Chat from './components/Chat';
+import Timeline from './components/Timeline';
+import Keep from './components/Keep';
+import Settings from './components/Settings';
 import './App.css';
+
+// グローバルコンテキスト
+export const AppContext = createContext();
 
 function App() {
   const [screen, setScreen] = useState('welcome');
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [currentGroupId, setCurrentGroupId] = useState(null);
+  const [currentChatType, setCurrentChatType] = useState('group'); // 'group' or 'direct'
   const [firebaseReady, setFirebaseReady] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+  const [notificationSettings, setNotificationSettings] = useState({});
+
+  // ダークモードの初期化
+  useEffect(() => {
+    const savedDarkMode = localStorage.getItem('darkMode') === 'true';
+    setDarkMode(savedDarkMode);
+    if (savedDarkMode) {
+      document.body.classList.add('dark-mode');
+    }
+  }, []);
 
   useEffect(() => {
-    // 保存されたFirebase設定をチェック
     const savedConfig = getFirebaseConfig();
     if (savedConfig) {
       try {
@@ -34,16 +52,26 @@ function App() {
   useEffect(() => {
     if (!firebaseReady) return;
 
-    const { auth } = getFirebaseInstances();
+    const { auth, db } = getFirebaseInstances();
     if (!auth) return;
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        // プロフィールチェックは別のコンポーネントで行う
+        // オンライン状態を更新
+        if (db) {
+          const userRef = doc(db, 'users', currentUser.uid);
+          try {
+            await updateDoc(userRef, {
+              online: true,
+              lastSeen: serverTimestamp()
+            });
+          } catch (error) {
+            // ユーザードキュメントがまだ存在しない場合は無視
+          }
+        }
         setScreen('checkProfile');
       } else {
-        // 匿名認証
         try {
           await signInAnonymously(auth);
         } catch (error) {
@@ -52,8 +80,23 @@ function App() {
       }
     });
 
-    return () => unsubscribe();
-  }, [firebaseReady]);
+    // アプリ終了時にオフライン状態を設定
+    const handleBeforeUnload = async () => {
+      if (user && db) {
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, {
+          online: false,
+          lastSeen: serverTimestamp()
+        });
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [firebaseReady, user]);
 
   const handleFirebaseSetup = (config) => {
     try {
@@ -70,14 +113,52 @@ function App() {
     setScreen('groupList');
   };
 
-  const openChat = (groupId) => {
+  const openChat = (groupId, chatType = 'group') => {
     setCurrentGroupId(groupId);
+    setCurrentChatType(chatType);
     setScreen('chat');
+  };
+
+  const openTimeline = () => {
+    setScreen('timeline');
+  };
+
+  const openKeep = () => {
+    setScreen('keep');
+  };
+
+  const openSettings = () => {
+    setScreen('settings');
   };
 
   const backToGroupList = () => {
     setCurrentGroupId(null);
     setScreen('groupList');
+  };
+
+  const toggleDarkMode = () => {
+    const newDarkMode = !darkMode;
+    setDarkMode(newDarkMode);
+    localStorage.setItem('darkMode', newDarkMode);
+    if (newDarkMode) {
+      document.body.classList.add('dark-mode');
+    } else {
+      document.body.classList.remove('dark-mode');
+    }
+  };
+
+  const contextValue = {
+    user,
+    profile,
+    darkMode,
+    toggleDarkMode,
+    notificationSettings,
+    setNotificationSettings,
+    openTimeline,
+    openKeep,
+    openSettings,
+    openChat,
+    backToGroupList
   };
 
   if (screen === 'welcome') {
@@ -121,28 +202,54 @@ function App() {
     );
   }
 
-  if (screen === 'groupList') {
-    return (
-      <GroupList
-        user={user}
-        profile={profile}
-        onOpenChat={openChat}
-      />
-    );
-  }
+  return (
+    <AppContext.Provider value={contextValue}>
+      {screen === 'groupList' && (
+        <GroupList
+          user={user}
+          profile={profile}
+          onOpenChat={openChat}
+          onOpenTimeline={openTimeline}
+          onOpenKeep={openKeep}
+          onOpenSettings={openSettings}
+        />
+      )}
 
-  if (screen === 'chat') {
-    return (
-      <Chat
-        user={user}
-        profile={profile}
-        groupId={currentGroupId}
-        onBack={backToGroupList}
-      />
-    );
-  }
+      {screen === 'chat' && (
+        <Chat
+          user={user}
+          profile={profile}
+          groupId={currentGroupId}
+          chatType={currentChatType}
+          onBack={backToGroupList}
+        />
+      )}
 
-  return null;
+      {screen === 'timeline' && (
+        <Timeline
+          user={user}
+          profile={profile}
+          onBack={backToGroupList}
+        />
+      )}
+
+      {screen === 'keep' && (
+        <Keep
+          user={user}
+          profile={profile}
+          onBack={backToGroupList}
+        />
+      )}
+
+      {screen === 'settings' && (
+        <Settings
+          user={user}
+          profile={profile}
+          onBack={backToGroupList}
+        />
+      )}
+    </AppContext.Provider>
+  );
 }
 
 export default App;
